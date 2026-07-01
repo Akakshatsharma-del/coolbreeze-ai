@@ -66,7 +66,7 @@ RAG, dashboard, SSE streaming, and full deployment.
 ```bash
 mkdir coolbreeze-ai
 cd coolbreeze-ai
-git clone https://github.com/dev-rathankumar/django_ai_employees.git .
+git clone https://github.com/dev-rathankumar/coolbreeze-ai-public.git .
 ```
 
 ### 2. Create and Activate Virtual Environment
