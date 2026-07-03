@@ -132,8 +132,13 @@ LOGIN_REDIRECT_URL = '/orders/'
 LOGOUT_REDIRECT_URL = '/login/'
 LOGIN_URL = '/login/'
 
-ANTHROPIC_API_KEY=config("ANTHROPIC_API_KEY")
-ANTHROPIC_MODEL=config("ANTHROPIC_MODEL")
+GROQ_API_KEY = config("GROQ_API_KEY")
+GROQ_MODEL = config("GROQ_MODEL", default="llama-3.3-70b-versatile")
+
+GEMINI_API_KEY = config("GEMINI_API_KEY")
+GEMINI_MODEL = config("GEMINI_MODEL", default="gemini-2.5-flash")
+
+CHROMA_DB_PATH = config("CHROMA_DB_PATH", default=str(BASE_DIR / "chroma_db"))
 
 
 STATICFILES_STORAGE = 'whitenoise.storage.StaticFilesStorage'

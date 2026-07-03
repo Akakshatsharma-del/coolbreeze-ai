@@ -16,13 +16,18 @@
       <hr/>
       <ul class="nav nav-pills flex-column mb-auto">
         <li class="nav-item">
-          <a href="#" class="nav-link text-white">
+          <a href="{% url 'dashboard' %}" class="nav-link text-white">
             💬 Conversations
+          </a>
+        </li>
+        <li class="nav-item">
+          <a href="/orders/" class="nav-link text-white">
+            🏠 Back to Customer Portal
           </a>
         </li>
       </ul>
       <hr/>
-      <span style="font-size:11px;opacity:0.5;">Logged in as admin</span>
+      <span style="font-size:11px;opacity:0.5;">Logged in as {{ request.user.username }}</span>
     </div>
 
     <!-- Main Content -->

@@ -156,6 +156,14 @@
 <!-- Content -->
 <div class="container">
 
+  <div class="alert d-flex justify-content-between align-items-center" style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:12px;font-size:13px;margin-top:20px;">
+    <span>
+      👋 Click into any order below and chat with Maya, our AI support agent — then check the
+      <a href="{% url 'dashboard' %}" target="_blank" style="color:#1a1a2e;font-weight:600;">live Agent Activity Dashboard</a>
+      to watch the AI agents reason, call tools, and escalate in real time.
+    </span>
+  </div>
+
   <div class="page-header">
     <h5>My Orders</h5>
     <p>{{ orders.count }} order{{ orders.count|pluralize }}</p>

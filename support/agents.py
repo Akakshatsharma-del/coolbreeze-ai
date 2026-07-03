@@ -1,14 +1,8 @@
-from anthropic import Anthropic
 from django.conf import settings
 from .tools import get_order_details, get_refund_history, check_delivery_status, get_customer_risk_profile, search_knowledge_base
 from .models import Conversation, Message, AgentLog
 from .event_queue import DONE, publish
-
-
-# Initialize Anthropic client
-client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-
-anthropic_model = settings.ANTHROPIC_MODEL
+from . import llm_gateway
 
 
 # SUPPORT SYSTEM PROMPT --> Maya's job description
@@ -251,13 +245,19 @@ def run_support_agent(user_message, conversation_id, order_id, user_id):
 
     while True:
         # send this conversation to LLM
-        response = client.messages.create(
-            model=anthropic_model,
-            max_tokens=1024,
-            system=SUPPORT_SYSTEM_PROMPT + f"\n\nContext: This conversation is about Order #{order_id}, user: {user_id}",
-            tools=SUPPORT_TOOLS,
-            messages=conversation_messages
-        )
+        try:
+            response = llm_gateway.create(
+                system=SUPPORT_SYSTEM_PROMPT + f"\n\nContext: This conversation is about Order #{order_id}, user: {user_id}",
+                tools=SUPPORT_TOOLS,
+                messages=conversation_messages
+            )
+        except Exception as e:
+            fallback_msg = "Sorry, our support system is temporarily unavailable. Please try again in a moment."
+            event = {"type": "final", "message": fallback_msg}
+            publish(conversation_id, event)
+            AgentLog.objects.create(conversation=conv, event_type="error", message=str(e))
+            publish(conversation_id, DONE)
+            return fallback_msg
 
         if response.stop_reason == 'tool_use':
             tool_result = []
@@ -319,13 +319,18 @@ def run_manager_agent(case_summary, conversation_id):
     ]
 
     while True:
-        response = client.messages.create(
-            model=anthropic_model,
-            max_tokens=1024,
-            system=MANAGER_SYSTEM_PROMPT,
-            tools=MANAGER_TOOLS,
-            messages=manager_messages
-        )
+        try:
+            response = llm_gateway.create(
+                system=MANAGER_SYSTEM_PROMPT,
+                tools=MANAGER_TOOLS,
+                messages=manager_messages
+            )
+        except Exception as e:
+            fallback_msg = "Unable to reach a manager decision right now due to a system issue. Please check back shortly."
+            event = {"type": "manager", "message": fallback_msg}
+            publish(conversation_id, event)
+            AgentLog.objects.create(conversation=conv, event_type="error", message=str(e))
+            return fallback_msg
 
         if response.stop_reason == 'tool_use':
             tool_result = []
@@ -378,13 +383,18 @@ def run_risk_agent(user_id, conversation_id):
     ]
 
     while True:
-        response = client.messages.create(
-            model=anthropic_model,
-            max_tokens=1024,
-            system=RISK_SYSTEM_PROMPT,
-            tools=RISK_TOOLS,
-            messages=risk_messages
-        )
+        try:
+            response = llm_gateway.create(
+                system=RISK_SYSTEM_PROMPT,
+                tools=RISK_TOOLS,
+                messages=risk_messages
+            )
+        except Exception as e:
+            fallback_msg = "Risk Level: UNKNOWN. Risk assessment temporarily unavailable due to a system issue — manager should use judgment or retry shortly."
+            event = {"type": "risk", "message": fallback_msg}
+            publish(conversation_id, event)
+            AgentLog.objects.create(conversation=conv, event_type="error", message=str(e))
+            return fallback_msg
 
         print("risk stop_reason===>", response.stop_reason)
 

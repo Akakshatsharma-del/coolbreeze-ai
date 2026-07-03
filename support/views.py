@@ -8,7 +8,7 @@ from .event_queue import publish, subscribe, unsubscribe
 from .models import Conversation, Message
 
 from orders.models import Order
-from django.contrib.admin.views.decorators import staff_member_required
+from django.contrib.auth.decorators import login_required
 
 
 
@@ -38,7 +38,7 @@ def chat(request, order_id):
         return JsonResponse({"reply": reply})
     
 
-@staff_member_required
+@login_required
 def dashboard(request):
     conversations = Conversation.objects.all().order_by("-created_at")
     print('conversations===>', conversations)
@@ -48,7 +48,7 @@ def dashboard(request):
     return render(request, "support/dashboard.html", context)
 
 
-@staff_member_required
+@login_required
 def conversation_detail(request, conversation_id):
     conversation = get_object_or_404(Conversation, id=conversation_id)
     messages = conversation.messages.order_by("created_at")
