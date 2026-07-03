@@ -120,8 +120,8 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = 'static/'
-STATIC_ROOT = os.path.join(BASE_DIR, "static")
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
@@ -143,6 +143,7 @@ CHROMA_DB_PATH = config("CHROMA_DB_PATH", default=str(BASE_DIR / "chroma_db"))
 
 STATICFILES_STORAGE = 'whitenoise.storage.StaticFilesStorage'
 
-CSRF_TRUSTED_ORIGINS = {
-    "https://djangoaiemployees-production.up.railway.app"
-}
+CSRF_TRUSTED_ORIGINS = config(
+    "CSRF_TRUSTED_ORIGINS",
+    default="",
+).split(",")
