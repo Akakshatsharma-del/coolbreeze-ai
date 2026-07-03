@@ -2,8 +2,8 @@
 llm_gateway.py
 
 Drop-in replacement for `client.messages.create(...)` (the Anthropic SDK call).
-Tries Groq first, falls back to Gemini on ANY failure (rate limit, auth error,
-network error, etc). Always tries free providers only — no Anthropic anywhere.
+Tries a chain of free providers in order, falling back to the next on ANY
+failure (rate limit, auth error, network error, etc).
 
 Returned objects mimic the shape of the Anthropic SDK's Message response
 (.stop_reason, .content -> list of blocks with .type/.text/.name/.input/.id)
@@ -11,19 +11,40 @@ so the existing agent-loop code in agents.py needs almost no changes.
 """
 
 import json
+import time
 import logging
 
 from django.conf import settings
 from groq import Groq
+from openai import OpenAI
 from google import genai
 from google.genai import types as genai_types
 
 logger = logging.getLogger(__name__)
 
 GROQ_MODEL = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile")
+CEREBRAS_MODEL = getattr(settings, "CEREBRAS_MODEL", "llama-3.3-70b")
+MISTRAL_MODEL = getattr(settings, "MISTRAL_MODEL", "mistral-small-latest")
+OPENROUTER_MODEL = getattr(settings, "OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
 GEMINI_MODEL = getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash")
 
 groq_client = Groq(api_key=settings.GROQ_API_KEY) if getattr(settings, "GROQ_API_KEY", None) else None
+
+cerebras_client = (
+    OpenAI(api_key=settings.CEREBRAS_API_KEY, base_url="https://api.cerebras.ai/v1")
+    if getattr(settings, "CEREBRAS_API_KEY", None) else None
+)
+
+mistral_client = (
+    OpenAI(api_key=settings.MISTRAL_API_KEY, base_url="https://api.mistral.ai/v1")
+    if getattr(settings, "MISTRAL_API_KEY", None) else None
+)
+
+openrouter_client = (
+    OpenAI(api_key=settings.OPENROUTER_API_KEY, base_url="https://openrouter.ai/api/v1")
+    if getattr(settings, "OPENROUTER_API_KEY", None) else None
+)
+
 gemini_client = genai.Client(api_key=settings.GEMINI_API_KEY) if getattr(settings, "GEMINI_API_KEY", None) else None
 
 
@@ -47,15 +68,13 @@ class NormalizedResponse:
 
 
 def _block_get(block, key, default=None):
-    """Read an attribute whether block is our ContentBlock or a plain dict
-    (dicts show up because previously-stored tool_result messages are dicts)."""
     if isinstance(block, dict):
         return block.get(key, default)
     return getattr(block, key, default)
 
 
 # ---------------------------------------------------------------------------
-# Tool schema conversion (Anthropic input_schema format -> provider format)
+# Tool schema conversion
 # ---------------------------------------------------------------------------
 
 def _tools_to_openai(tools):
@@ -168,7 +187,7 @@ def _messages_to_gemini(messages):
                     parts.append(genai_types.Part(
                         function_call=genai_types.FunctionCall(name=name, args=_block_get(block, "input"))
                     ))
-            else:  # user turn
+            else:
                 if isinstance(block, dict) and block.get("type") == "tool_result":
                     name = tool_id_to_name.get(block["tool_use_id"], "unknown_tool")
                     parts.append(genai_types.Part(
@@ -187,15 +206,15 @@ def _messages_to_gemini(messages):
 
 
 # ---------------------------------------------------------------------------
-# Provider calls
+# Generic OpenAI-compatible caller (Groq, Cerebras, Mistral, OpenRouter)
 # ---------------------------------------------------------------------------
 
-def _call_groq(system, messages, tools):
-    if not groq_client:
-        raise RuntimeError("GROQ_API_KEY not configured")
+def _call_openai_compatible(client, model, system, messages, tools):
+    if not client:
+        raise RuntimeError("Client not configured (missing API key)")
 
     kwargs = {
-        "model": GROQ_MODEL,
+        "model": model,
         "max_tokens": 1024,
         "messages": _messages_to_openai(system, messages),
     }
@@ -203,7 +222,7 @@ def _call_groq(system, messages, tools):
         kwargs["tools"] = _tools_to_openai(tools)
         kwargs["tool_choice"] = "auto"
 
-    resp = groq_client.chat.completions.create(**kwargs)
+    resp = client.chat.completions.create(**kwargs)
     choice = resp.choices[0]
     content_blocks = []
 
@@ -268,26 +287,35 @@ def _call_gemini(system, messages, tools):
 
 
 # ---------------------------------------------------------------------------
-# Public entry point — call this instead of client.messages.create(...)
+# Provider chain — order matters: most generous free tier first
+# ---------------------------------------------------------------------------
+
+def _provider_chain():
+    return [
+        ("Groq", lambda s, m, t: _call_openai_compatible(groq_client, GROQ_MODEL, s, m, t)),
+        ("Cerebras", lambda s, m, t: _call_openai_compatible(cerebras_client, CEREBRAS_MODEL, s, m, t)),
+        ("Mistral", lambda s, m, t: _call_openai_compatible(mistral_client, MISTRAL_MODEL, s, m, t)),
+        ("OpenRouter", lambda s, m, t: _call_openai_compatible(openrouter_client, OPENROUTER_MODEL, s, m, t)),
+        ("Gemini", lambda s, m, t: _call_gemini(s, m, t)),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Public entry point
 # ---------------------------------------------------------------------------
 
 def create(system, messages, tools=None):
     errors = []
 
-    try:
-        return _call_groq(system, messages, tools)
-    except Exception as e:
-        logger.warning("Groq call failed, falling back to Gemini: %s", e)
-        errors.append(f"Groq: {e}")
-
-    for attempt in range(2):
-        try:
-            return _call_gemini(system, messages, tools)
-        except Exception as e:
-            logger.error("Gemini call failed (attempt %d): %s", attempt + 1, e)
-            if attempt == 0:
-                time.sleep(2)
-            else:
-                errors.append(f"Gemini: {e}")
+    for name, provider_fn in _provider_chain():
+        for attempt in range(2 if name == "Gemini" else 1):
+            try:
+                return provider_fn(system, messages, tools)
+            except Exception as e:
+                logger.warning("%s call failed (attempt %d): %s", name, attempt + 1, e)
+                if name == "Gemini" and attempt == 0:
+                    time.sleep(2)
+                else:
+                    errors.append(f"{name}: {e}")
 
     raise RuntimeError(f"All free LLM providers failed. Details: {' | '.join(errors)}")

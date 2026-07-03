@@ -138,6 +138,15 @@ GROQ_MODEL = config("GROQ_MODEL", default="llama-3.3-70b-versatile")
 GEMINI_API_KEY = config("GEMINI_API_KEY")
 GEMINI_MODEL = config("GEMINI_MODEL", default="gemini-2.5-flash")
 
+CEREBRAS_API_KEY = config("CEREBRAS_API_KEY", default="")
+CEREBRAS_MODEL = config("CEREBRAS_MODEL", default="llama-3.3-70b")
+
+MISTRAL_API_KEY = config("MISTRAL_API_KEY", default="")
+MISTRAL_MODEL = config("MISTRAL_MODEL", default="mistral-small-latest")
+
+OPENROUTER_API_KEY = config("OPENROUTER_API_KEY", default="")
+OPENROUTER_MODEL = config("OPENROUTER_MODEL", default="meta-llama/llama-3.3-70b-instruct:free")
+
 CHROMA_DB_PATH = config("CHROMA_DB_PATH", default=str(BASE_DIR / "chroma_db"))
 
 
